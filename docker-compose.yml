@@ -39,9 +39,49 @@ services:
       CONTROL_PLANE_URL: http://control-plane:8000/api/v1
       DEV_BEARER_TOKEN: ${DEV_BEARER_TOKEN:-dev-local-token}
       CORS_ORIGINS: http://localhost:3000
+      OPENSEARCH_URL: http://opensearch:9200
+      TEMPORAL_HOST: temporal:7233
     ports: ["8001:8001"]
     depends_on:
       control-plane: { condition: service_healthy }
+      opensearch: { condition: service_healthy }
+      temporal: { condition: service_healthy }
+
+  # Phase 6: Temporal dev-server -- wraps `durable`/`human_in_loop` graph
+  # invocations (see agentforge-docs doc05/ADR-0004). Self-contained,
+  # embedded-SQLite `temporal server start-dev`, not the older Cassandra/
+  # Postgres/Elasticsearch `auto-setup` image -- no separate datastore
+  # container needed. Deliberately does NOT share the `agentforge` Postgres
+  # database: doc05 is explicit that Temporal's event history lives in its
+  # own storage, separate from `agentforge`. Web UI on 8233; SDK/gRPC on
+  # 7233 (used by both the execution-platform's in-process Worker and its
+  # router's Client -- see temporal_worker.py / main.py).
+  temporal:
+    image: temporalio/temporal:latest
+    entrypoint: ["temporal"]
+    command: ["server", "start-dev", "--ip", "0.0.0.0"]
+    ports: ["7233:7233", "8233:8233"]
+    healthcheck:
+      test: ["CMD-SHELL", "temporal operator cluster health --address temporal:7233 || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+
+  opensearch:
+    image: opensearchproject/opensearch:2.19.1
+    environment:
+      - discovery.type=single-node
+      - plugins.security.disabled=true
+      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
+      - DISABLE_INSTALL_DEMO_CONFIG=true
+    ports: ["9200:9200"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200 || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
 
   frontend:
     build:
@@ -54,6 +94,30 @@ services:
     depends_on:
       control-plane: { condition: service_healthy }
       execution-platform: { condition: service_started }
+
+  # Phase 5 Observability: execution-platform exports metrics directly to
+  # Prometheus (doc11's local-dev diagram: `ep --> prom`, no collector
+  # service in between) via prometheus_client's GET /metrics.
+  prometheus:
+    image: prom/prometheus:v3.0.1
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports: ["9090:9090"]
+    depends_on:
+      execution-platform: { condition: service_started }
+
+  # Host port 3001, not 3000 -- 3000 is already the frontend.
+  grafana:
+    image: grafana/grafana:11.4.0
+    ports: ["3001:3000"]
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
 
 volumes:
   agentforge-db-data:
