@@ -1,0 +1,49 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Lives at the repo root, alongside docker-compose.yml, rather than inside
+# kubernetes/ -- it ties kubernetes/*.yaml together with the SAME
+# observability/*.yml files docker-compose bind-mounts (see the
+# configMapGenerator section below), and Kustomize's default load
+# restrictor refuses to reference files that aren't at-or-below the
+# directory holding kustomization.yaml, so kubernetes/ alone can't reach
+# its sibling observability/ directory.
+
+namespace: agentforge
+
+resources:
+  - kubernetes/namespace.yaml
+  - kubernetes/secrets.yaml
+  - kubernetes/db.yaml
+  - kubernetes/temporal.yaml
+  - kubernetes/opensearch.yaml
+  - kubernetes/control-plane.yaml
+  - kubernetes/execution-platform.yaml
+  - kubernetes/frontend.yaml
+  - kubernetes/prometheus.yaml
+  - kubernetes/grafana.yaml
+  # kubernetes/ingress.yaml is deliberately not listed here -- copy
+  # kubernetes/ingress.example.yaml to kubernetes/ingress.yaml (fill in real
+  # hostnames) and `kubectl apply -f` it separately once you know which
+  # ingress controller your cluster runs; see that file's own comment.
+
+# Generated (not hand-copied) from the same files docker-compose bind-mounts
+# -- see kubernetes/prometheus.yaml / kubernetes/grafana.yaml's own
+# comments for why. Kustomize's default content-hash suffix on each
+# generated ConfigMap's name is left enabled (not
+# `disableNameSuffixHash: true`): it's what makes editing observability/*.yml
+# and re-running `kubectl apply -k` actually roll the affected Deployment,
+# instead of a stale ConfigMap silently sitting unused.
+configMapGenerator:
+  - name: prometheus-config
+    files:
+      - prometheus.yml=observability/prometheus.yml
+  - name: grafana-datasource-provisioning
+    files:
+      - observability/grafana/provisioning/datasources/prometheus.yml
+  - name: grafana-dashboard-provisioning
+    files:
+      - observability/grafana/provisioning/dashboards/dashboards.yml
+  - name: grafana-dashboards
+    files:
+      - observability/grafana/dashboards/agentforge.json

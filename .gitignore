@@ -1,4 +1,6 @@
 .env
+kubernetes/secrets.yaml
+kubernetes/ingress.yaml
 *.tfstate
 *.tfstate.*
 .terraform/

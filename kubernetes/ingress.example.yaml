@@ -1,0 +1,48 @@
+# Copy to ingress.yaml (gitignored -- see kustomization.yaml) and fill in
+# real hostnames + your cluster's actual ingressClassName before applying.
+# Not included by default: which ingress controller (nginx, ALB, etc.) is
+# installed varies per cluster, so this stays a template rather than a
+# resource kustomization.yaml applies unconditionally. Whatever hostnames
+# you put here for control-plane/execution-platform must match what you set
+# in frontend.yaml's frontend-public-urls ConfigMap -- that's what the
+# browser actually calls, this Ingress is what makes those hostnames
+# resolve to something.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: agentforge
+  namespace: agentforge
+  annotations: {}
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: agentforge.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 3000
+    - host: control-plane.agentforge.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: control-plane
+                port:
+                  number: 8000
+    - host: execution-platform.agentforge.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: execution-platform
+                port:
+                  number: 8001

@@ -1,0 +1,84 @@
+# Image is built locally from ../../agentforge-control-plane, not pulled
+# from a registry -- see kubernetes/README.md for how to build+load it into
+# a local cluster (kind/minikube). The container's own CMD (`alembic
+# upgrade head && exec uvicorn ...`) runs migrations on every pod start,
+# unchanged from docker-compose -- readiness/liveness probes are generous
+# on initialDelaySeconds so a pod isn't killed mid-migration.
+apiVersion: v1
+kind: Service
+metadata:
+  name: control-plane
+  namespace: agentforge
+  labels:
+    app: control-plane
+spec:
+  selector:
+    app: control-plane
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: control-plane
+  namespace: agentforge
+  labels:
+    app: control-plane
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: control-plane
+  template:
+    metadata:
+      labels:
+        app: control-plane
+    spec:
+      containers:
+        - name: control-plane
+          image: agentforge/control-plane:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: agentforge-credentials
+                  key: control-plane-database-url
+            - name: EXECUTION_ROLE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: agentforge-credentials
+                  key: execution-role-password
+            - name: DEV_BEARER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: agentforge-credentials
+                  key: dev-bearer-token
+            - name: CORS_ORIGINS
+              value: "http://localhost:3000"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 15
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi

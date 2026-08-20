@@ -1,0 +1,72 @@
+# Temporal dev-server (embedded SQLite, no external datastore) -- same
+# image/command as docker-compose's `temporal` service. This is dev-grade,
+# not a production Temporal deployment: a real cluster would run Temporal
+# Server against a real datastore (or use Temporal Cloud) rather than the
+# single-process `start-dev` mode, and this Deployment's single replica has
+# no persistence volume, so a pod restart loses all workflow history. Kept
+# unchanged here to match this phase's scope (translate the existing
+# docker-compose topology to Kubernetes) -- swapping in a real Temporal
+# cluster is follow-up work, not done in this pass.
+apiVersion: v1
+kind: Service
+metadata:
+  name: temporal
+  namespace: agentforge
+  labels:
+    app: temporal
+spec:
+  selector:
+    app: temporal
+  ports:
+    - name: grpc
+      port: 7233
+      targetPort: 7233
+    - name: ui
+      port: 8233
+      targetPort: 8233
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: temporal
+  namespace: agentforge
+  labels:
+    app: temporal
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: temporal
+  template:
+    metadata:
+      labels:
+        app: temporal
+    spec:
+      containers:
+        - name: temporal
+          image: temporalio/temporal:latest
+          command: ["temporal"]
+          args: ["server", "start-dev", "--ip", "0.0.0.0"]
+          ports:
+            - containerPort: 7233
+            - containerPort: 8233
+          readinessProbe:
+            exec:
+              command: ["temporal", "operator", "cluster", "health", "--address", "localhost:7233"]
+            initialDelaySeconds: 15
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 20
+          livenessProbe:
+            exec:
+              command: ["temporal", "operator", "cluster", "health", "--address", "localhost:7233"]
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi

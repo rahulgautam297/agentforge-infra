@@ -1,0 +1,97 @@
+# Image built locally from ../../agentforge-frontend -- see
+# kubernetes/README.md. The container's CMD is `pnpm dev` (a dev server),
+# unchanged from docker-compose -- this manifest set is a topology
+# translation, not an app-level fix, so it inherits that as a known
+# limitation rather than silently rebuilding the frontend's Dockerfile to
+# do a production `next build && next start`. See README.md's "Known gaps"
+# section.
+#
+# NEXT_PUBLIC_CONTROL_PLANE_URL / NEXT_PUBLIC_EXECUTION_PLANE_URL are read
+# by code running in the USER'S BROWSER, not server-to-server -- unlike
+# every other cross-service URL in this manifest set, these cannot be
+# internal Service DNS names (http://control-plane:8000), because the
+# browser is outside the cluster network entirely. docker-compose's
+# defaults of http://localhost:8000 / :8001 only worked there because the
+# browser and the compose stack shared one host's localhost. This
+# ConfigMap's values MUST be edited to the cluster's actual public
+# hostnames (e.g. behind ingress.example.yaml's Ingress) before this is
+# useful beyond a port-forwarded smoke test.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend-public-urls
+  namespace: agentforge
+data:
+  NEXT_PUBLIC_CONTROL_PLANE_URL: "http://localhost:8000/api/v1"
+  NEXT_PUBLIC_EXECUTION_PLANE_URL: "http://localhost:8001/api/v1"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: agentforge
+  labels:
+    app: frontend
+spec:
+  selector:
+    app: frontend
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: agentforge
+  labels:
+    app: frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+        - name: frontend
+          image: agentforge/frontend:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3000
+          envFrom:
+            - configMapRef:
+                name: frontend-public-urls
+          env:
+            - name: NEXT_PUBLIC_DEV_BEARER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: agentforge-credentials
+                  key: dev-bearer-token
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 15
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi

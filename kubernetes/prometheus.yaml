@@ -1,0 +1,66 @@
+# prometheus.yml itself is NOT duplicated into this file -- kustomization.yaml's
+# configMapGenerator reads ../observability/prometheus.yml directly (the
+# same file docker-compose bind-mounts), so the two stay in sync by
+# construction instead of by remembering to copy-paste. Ephemeral storage,
+# same as docker-compose's prometheus service (no volume declared there
+# either) -- a pod restart loses scraped history, acceptable for this
+# phase's demo/dev scope.
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  namespace: agentforge
+  labels:
+    app: prometheus
+spec:
+  selector:
+    app: prometheus
+  ports:
+    - name: http
+      port: 9090
+      targetPort: 9090
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  namespace: agentforge
+  labels:
+    app: prometheus
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prometheus
+  template:
+    metadata:
+      labels:
+        app: prometheus
+    spec:
+      containers:
+        - name: prometheus
+          image: prom/prometheus:v3.0.1
+          ports:
+            - containerPort: 9090
+          volumeMounts:
+            - name: prometheus-config
+              mountPath: /etc/prometheus/prometheus.yml
+              subPath: prometheus.yml
+          readinessProbe:
+            httpGet:
+              path: /-/ready
+              port: 9090
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      volumes:
+        - name: prometheus-config
+          configMap:
+            name: prometheus-config

@@ -1,0 +1,100 @@
+# Image built locally from ../../agentforge-agent-execution-platform -- see
+# kubernetes/README.md. Kubernetes has no direct equivalent of
+# docker-compose's `depends_on: condition: service_healthy`, so the two
+# hard dependencies that this service's own code does NOT already retry
+# (control-plane, opensearch) get a wait-for initContainer each; Temporal is
+# deliberately left out of that list -- main.py's own
+# `_connect_temporal_client` already retries the connection 10x with a 2s
+# backoff, so an extra initContainer would just duplicate that resilience.
+apiVersion: v1
+kind: Service
+metadata:
+  name: execution-platform
+  namespace: agentforge
+  labels:
+    app: execution-platform
+spec:
+  selector:
+    app: execution-platform
+  ports:
+    - name: http
+      port: 8001
+      targetPort: 8001
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: execution-platform
+  namespace: agentforge
+  labels:
+    app: execution-platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: execution-platform
+  template:
+    metadata:
+      labels:
+        app: execution-platform
+    spec:
+      initContainers:
+        - name: wait-for-control-plane
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - until wget -q -O /dev/null http://control-plane:8000/healthz; do echo waiting for control-plane; sleep 2; done
+        - name: wait-for-opensearch
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - until wget -q -O /dev/null http://opensearch:9200; do echo waiting for opensearch; sleep 2; done
+      containers:
+        - name: execution-platform
+          image: agentforge/execution-platform:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8001
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: agentforge-credentials
+                  key: execution-platform-database-url
+            - name: CONTROL_PLANE_URL
+              value: "http://control-plane:8000/api/v1"
+            - name: DEV_BEARER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: agentforge-credentials
+                  key: dev-bearer-token
+            - name: CORS_ORIGINS
+              value: "http://localhost:3000"
+            - name: OPENSEARCH_URL
+              value: "http://opensearch:9200"
+            - name: TEMPORAL_HOST
+              value: "temporal:7233"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8001
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 15
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8001
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
