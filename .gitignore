@@ -4,6 +4,7 @@ kubernetes/ingress.yaml
 *.tfstate
 *.tfstate.*
 .terraform/
+terraform/terraform.tfvars
 .DS_Store
 *.swp
 *.swo

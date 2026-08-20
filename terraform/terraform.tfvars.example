@@ -1,0 +1,17 @@
+# Copy to terraform.tfvars (gitignored -- see .gitignore) and adjust
+# before running `terraform apply`. Every value here has a working default
+# in variables.tf; this file only needs to override what's actually
+# different for your account/deployment.
+
+aws_region   = "us-east-1"
+cluster_name = "agentforge"
+
+# Must match the Bedrock model(s) your deployed agent YAML(s) actually
+# declare in model.model_id -- see ../helm/agentforge/values.yaml's
+# credentials section and ../../agentforge-showcase-agents/knowledge/agent.yaml.
+bedrock_model_resource_pattern = "amazon.nova-*"
+
+# Must match how you actually install the Helm chart -- see iam.tf's
+# comment and ../helm/agentforge/README.md's install command.
+eks_namespace                       = "agentforge"
+execution_platform_service_account  = "agentforge-execution-platform"
