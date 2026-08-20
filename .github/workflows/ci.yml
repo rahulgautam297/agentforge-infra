@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  compose-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Validates docker-compose.yml's YAML + ${VAR:-default} interpolation
+      # without pulling or building a single image -- every build: context
+      # (../agentforge-*) is missing on this runner (this repo alone is
+      # checked out, not its six siblings), which `config` doesn't need to
+      # resolve but `up`/`build` would.
+      - name: docker compose config
+        run: docker compose config
+
+  kubernetes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: azure/setup-kubectl@v5
+
+      # kustomization.yaml requires kubernetes/secrets.yaml to exist (see
+      # that file's own comment) -- same throwaway copy-from-example this
+      # session's manual validation used, discarded when the job ends.
+      - name: Render Kustomize manifests
+        run: |
+          cp kubernetes/secrets.example.yaml kubernetes/secrets.yaml
+          kubectl kustomize . > /tmp/rendered.yaml
+          echo "Rendered $(grep -c '^kind:' /tmp/rendered.yaml) resources"
+
+  helm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: azure/setup-helm@v5
+
+      - name: helm lint
+        run: helm lint helm/agentforge
+
+      # Default values, plus the two conditional-resource toggles --
+      # exactly the three helm template invocations this session's manual
+      # validation ran, now automated. This is what actually caught the
+      # Prometheus/Grafana hardcoded-service-name bug during authoring;
+      # keeping it in CI is what stops that class of bug from coming back.
+      - name: helm template (default values)
+        run: helm template test-release helm/agentforge > /dev/null
+
+      - name: helm template (ingress enabled)
+        run: helm template test-release helm/agentforge --set ingress.enabled=true > /dev/null
+
+      - name: helm template (existingSecret)
+        run: helm template test-release helm/agentforge --set credentials.existingSecret=my-external-secret > /dev/null
+
+  terraform:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: terraform
+    steps:
+      - uses: actions/checkout@v7
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: "1.15.8"
+
+      - name: terraform fmt -check
+        run: terraform fmt -check -diff
+
+      # -backend=false: no remote state configured (see terraform/README.md's
+      # "Remote state" section) and none needed just to validate syntax/types.
+      - name: terraform init
+        run: terraform init -backend=false
+
+      - name: terraform validate
+        run: terraform validate
