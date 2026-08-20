@@ -1,0 +1,45 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "agentforge.fullname" . }}
+  labels:
+    {{- include "agentforge.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  rules:
+    - host: {{ .Values.ingress.hosts.frontend }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "agentforge.fullname" . }}-frontend
+                port:
+                  number: 3000
+    - host: {{ .Values.ingress.hosts.controlPlane }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "agentforge.fullname" . }}-control-plane
+                port:
+                  number: 8000
+    - host: {{ .Values.ingress.hosts.executionPlatform }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "agentforge.fullname" . }}-execution-platform
+                port:
+                  number: 8001
+{{- end }}

@@ -1,0 +1,11 @@
+apiVersion: v2
+name: agentforge
+description: >-
+  AgentForge's full stack (control plane, execution plane, frontend,
+  TimescaleDB, Temporal, OpenSearch, Prometheus, Grafana) as a single
+  parameterized Helm chart -- the same topology kubernetes/*.yaml and
+  docker-compose.yml both describe, packaged for distribution rather than
+  applied in-repo.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

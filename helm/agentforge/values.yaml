@@ -1,0 +1,139 @@
+# Default values for the agentforge chart. Namespace comes from
+# `helm install -n <namespace> --create-namespace` (Helm's own release
+# namespace), not a value here -- templating a Namespace resource inside a
+# chart risks it being deleted on `helm uninstall`, taking everything else
+# in it down first; letting Helm manage the namespace via its own flag
+# avoids that footgun.
+
+# The three sibling-repo services this chart doesn't pull from a public
+# registry -- images.control-plane.repository/executionPlatform.repository/
+# frontend.repository must point at wherever you've pushed them (see
+# README.md's build+push steps). The five third-party images below have
+# real defaults and rarely need overriding.
+image:
+  pullPolicy: IfNotPresent
+  controlPlane:
+    repository: agentforge/control-plane
+    tag: local
+  executionPlatform:
+    repository: agentforge/execution-platform
+    tag: local
+  frontend:
+    repository: agentforge/frontend
+    tag: local
+  db:
+    repository: timescale/timescaledb
+    tag: latest-pg16
+  temporal:
+    repository: temporalio/temporal
+    tag: latest
+  opensearch:
+    repository: opensearchproject/opensearch
+    tag: "2.19.1"
+  prometheus:
+    repository: prom/prometheus
+    tag: v3.0.1
+  grafana:
+    repository: grafana/grafana
+    tag: "11.4.0"
+  busybox:
+    repository: busybox
+    tag: "1.36"
+
+# Copy .env.example's convention: real values belong in a values-prod.yaml
+# (or --set) you keep out of version control, not committed here. The
+# defaults below are the same throwaway dev values docker-compose.yml and
+# kubernetes/secrets.example.yaml already ship.
+credentials:
+  # Set to an existing Secret's name (with the same 5 keys
+  # templates/secret.yaml would otherwise create -- see that file's
+  # comment) to bring your own secret instead of letting this chart
+  # generate one from the values below.
+  existingSecret: ""
+  postgresPassword: agentforge_dev_password
+  executionRolePassword: execution_dev_password
+  devBearerToken: dev-local-token
+  # Phase 10 Bedrock -- empty is fine for mock-only agents; boto3's default
+  # credential chain inside BedrockProvider only gets exercised by an agent
+  # YAML that actually declares model.provider: bedrock. See
+  # execution-platform/README or agentforge-agent-execution-platform's
+  # providers/bedrock.py for why no Settings field backs these two directly.
+  awsRegion: us-east-1
+  awsAccessKeyId: ""
+  awsSecretAccessKey: ""
+
+db:
+  replicas: 1
+  storage: 10Gi
+  resources:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits: { cpu: "1", memory: 1Gi }
+
+opensearch:
+  storage: 10Gi
+  javaOpts: "-Xms512m -Xmx512m"
+  # See kubernetes/opensearch.yaml's own comment -- requires a cluster that
+  # allows a privileged initContainer. Set false and raise vm.max_map_count
+  # on the node image/bootstrap instead if your cluster's Pod Security
+  # admission forbids it.
+  sysctlInitContainer: true
+  resources:
+    requests: { cpu: 500m, memory: 1Gi }
+    limits: { cpu: "2", memory: 2Gi }
+
+temporal:
+  resources:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits: { cpu: "1", memory: 1Gi }
+
+controlPlane:
+  replicas: 1
+  corsOrigins: "http://localhost:3000"
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { cpu: 500m, memory: 512Mi }
+
+executionPlatform:
+  replicas: 1
+  corsOrigins: "http://localhost:3000"
+  resources:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits: { cpu: "1", memory: 1Gi }
+
+# publicUrls are read by the BROWSER, not server-to-server -- see
+# templates/frontend.yaml's comment (same caveat as
+# kubernetes/frontend.yaml's frontend-public-urls ConfigMap). Must be real,
+# externally-reachable hostnames once ingress.enabled is true; the
+# localhost defaults only work for `kubectl port-forward`.
+frontend:
+  replicas: 1
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { cpu: 500m, memory: 512Mi }
+  publicUrls:
+    controlPlane: "http://localhost:8000/api/v1"
+    executionPlatform: "http://localhost:8001/api/v1"
+
+prometheus:
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { cpu: 500m, memory: 512Mi }
+
+grafana:
+  anonymousAuth: true
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { cpu: 500m, memory: 512Mi }
+
+# Disabled by default -- which ingress controller (nginx, ALB, etc.) is
+# installed varies per cluster, same reasoning as
+# kubernetes/ingress.example.yaml. hosts.* must match frontend.publicUrls
+# above once enabled.
+ingress:
+  enabled: false
+  className: nginx
+  annotations: {}
+  hosts:
+    frontend: agentforge.example.com
+    controlPlane: control-plane.agentforge.example.com
+    executionPlatform: execution-platform.agentforge.example.com

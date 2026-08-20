@@ -1,0 +1,106 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "agentforge.fullname" . }}-execution-platform
+  labels:
+    {{- include "agentforge.labels" . | nindent 4 }}
+    {{- include "agentforge.selectorLabels" (dict "component" "execution-platform" "Release" .Release) | nindent 4 }}
+spec:
+  selector:
+    {{- include "agentforge.selectorLabels" (dict "component" "execution-platform" "Release" .Release) | nindent 4 }}
+  ports:
+    - name: http
+      port: 8001
+      targetPort: 8001
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "agentforge.fullname" . }}-execution-platform
+  labels:
+    {{- include "agentforge.labels" . | nindent 4 }}
+    {{- include "agentforge.selectorLabels" (dict "component" "execution-platform" "Release" .Release) | nindent 4 }}
+spec:
+  replicas: {{ .Values.executionPlatform.replicas }}
+  selector:
+    matchLabels:
+      {{- include "agentforge.selectorLabels" (dict "component" "execution-platform" "Release" .Release) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "agentforge.selectorLabels" (dict "component" "execution-platform" "Release" .Release) | nindent 8 }}
+    spec:
+      {{/* See kubernetes/execution-platform.yaml's comment -- Temporal is deliberately not waited on here; main.py's own _connect_temporal_client already retries. */}}
+      initContainers:
+        - name: wait-for-control-plane
+          image: "{{ .Values.image.busybox.repository }}:{{ .Values.image.busybox.tag }}"
+          command:
+            - sh
+            - -c
+            - until wget -q -O /dev/null http://{{ include "agentforge.fullname" . }}-control-plane:8000/healthz; do echo waiting for control-plane; sleep 2; done
+        - name: wait-for-opensearch
+          image: "{{ .Values.image.busybox.repository }}:{{ .Values.image.busybox.tag }}"
+          command:
+            - sh
+            - -c
+            - until wget -q -O /dev/null http://{{ include "agentforge.fullname" . }}-opensearch:9200; do echo waiting for opensearch; sleep 2; done
+      containers:
+        - name: execution-platform
+          image: "{{ .Values.image.executionPlatform.repository }}:{{ .Values.image.executionPlatform.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: 8001
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "agentforge.secretName" . }}
+                  key: execution-platform-database-url
+            - name: CONTROL_PLANE_URL
+              value: "http://{{ include "agentforge.fullname" . }}-control-plane:8000/api/v1"
+            - name: DEV_BEARER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "agentforge.secretName" . }}
+                  key: dev-bearer-token
+            - name: CORS_ORIGINS
+              value: {{ .Values.executionPlatform.corsOrigins | quote }}
+            - name: OPENSEARCH_URL
+              value: "http://{{ include "agentforge.fullname" . }}-opensearch:9200"
+            - name: TEMPORAL_HOST
+              value: "{{ include "agentforge.fullname" . }}-temporal:7233"
+            - name: AWS_REGION
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "agentforge.secretName" . }}
+                  key: aws-region
+                  optional: true
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "agentforge.secretName" . }}
+                  key: aws-access-key-id
+                  optional: true
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "agentforge.secretName" . }}
+                  key: aws-secret-access-key
+                  optional: true
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8001
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 15
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8001
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.executionPlatform.resources | nindent 12 }}

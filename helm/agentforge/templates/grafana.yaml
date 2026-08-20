@@ -1,0 +1,107 @@
+{{/*
+Same tpl-over-.Files.Get approach as prometheus.yaml -- this datasource
+file's own `url:` needs the release-scoped Prometheus Service name, so it's
+rendered as a template, not embedded as static text. See that file's
+comment for the full reasoning.
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "agentforge.fullname" . }}-grafana-datasource-provisioning
+  labels:
+    {{- include "agentforge.labels" . | nindent 4 }}
+data:
+  prometheus.yml: |
+    {{- tpl (.Files.Get "files/observability/grafana/provisioning/datasources/prometheus.yml") . | nindent 4 }}
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "agentforge.fullname" . }}-grafana-dashboard-provisioning
+  labels:
+    {{- include "agentforge.labels" . | nindent 4 }}
+data:
+  dashboards.yml: |
+    {{- .Files.Get "files/observability/grafana/provisioning/dashboards/dashboards.yml" | nindent 4 }}
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "agentforge.fullname" . }}-grafana-dashboards
+  labels:
+    {{- include "agentforge.labels" . | nindent 4 }}
+data:
+  agentforge.json: |
+    {{- .Files.Get "files/observability/grafana/dashboards/agentforge.json" | nindent 4 }}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "agentforge.fullname" . }}-grafana
+  labels:
+    {{- include "agentforge.labels" . | nindent 4 }}
+    {{- include "agentforge.selectorLabels" (dict "component" "grafana" "Release" .Release) | nindent 4 }}
+spec:
+  selector:
+    {{- include "agentforge.selectorLabels" (dict "component" "grafana" "Release" .Release) | nindent 4 }}
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "agentforge.fullname" . }}-grafana
+  labels:
+    {{- include "agentforge.labels" . | nindent 4 }}
+    {{- include "agentforge.selectorLabels" (dict "component" "grafana" "Release" .Release) | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "agentforge.selectorLabels" (dict "component" "grafana" "Release" .Release) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "agentforge.selectorLabels" (dict "component" "grafana" "Release" .Release) | nindent 8 }}
+    spec:
+      containers:
+        - name: grafana
+          image: "{{ .Values.image.grafana.repository }}:{{ .Values.image.grafana.tag }}"
+          ports:
+            - containerPort: 3000
+          env:
+            - name: GF_AUTH_ANONYMOUS_ENABLED
+              value: {{ .Values.grafana.anonymousAuth | quote }}
+            - name: GF_AUTH_ANONYMOUS_ORG_ROLE
+              value: "Admin"
+          volumeMounts:
+            - name: grafana-datasource-provisioning
+              mountPath: /etc/grafana/provisioning/datasources
+            - name: grafana-dashboard-provisioning
+              mountPath: /etc/grafana/provisioning/dashboards
+            - name: grafana-dashboards
+              mountPath: /var/lib/grafana/dashboards
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.grafana.resources | nindent 12 }}
+      volumes:
+        - name: grafana-datasource-provisioning
+          configMap:
+            name: {{ include "agentforge.fullname" . }}-grafana-datasource-provisioning
+        - name: grafana-dashboard-provisioning
+          configMap:
+            name: {{ include "agentforge.fullname" . }}-grafana-dashboard-provisioning
+        - name: grafana-dashboards
+          configMap:
+            name: {{ include "agentforge.fullname" . }}-grafana-dashboards

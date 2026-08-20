@@ -1,0 +1,84 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "agentforge.fullname" . }}-opensearch
+  labels:
+    {{- include "agentforge.labels" . | nindent 4 }}
+    {{- include "agentforge.selectorLabels" (dict "component" "opensearch" "Release" .Release) | nindent 4 }}
+spec:
+  clusterIP: None
+  selector:
+    {{- include "agentforge.selectorLabels" (dict "component" "opensearch" "Release" .Release) | nindent 4 }}
+  ports:
+    - name: http
+      port: 9200
+      targetPort: 9200
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "agentforge.fullname" . }}-opensearch
+  labels:
+    {{- include "agentforge.labels" . | nindent 4 }}
+    {{- include "agentforge.selectorLabels" (dict "component" "opensearch" "Release" .Release) | nindent 4 }}
+spec:
+  serviceName: {{ include "agentforge.fullname" . }}-opensearch
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "agentforge.selectorLabels" (dict "component" "opensearch" "Release" .Release) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "agentforge.selectorLabels" (dict "component" "opensearch" "Release" .Release) | nindent 8 }}
+    spec:
+      {{- if .Values.opensearch.sysctlInitContainer }}
+      initContainers:
+        - name: sysctl
+          image: "{{ .Values.image.busybox.repository }}:{{ .Values.image.busybox.tag }}"
+          command: ["sh", "-c", "sysctl -w vm.max_map_count=262144"]
+          securityContext:
+            privileged: true
+      {{- end }}
+      containers:
+        - name: opensearch
+          image: "{{ .Values.image.opensearch.repository }}:{{ .Values.image.opensearch.tag }}"
+          ports:
+            - containerPort: 9200
+          env:
+            - name: discovery.type
+              value: single-node
+            - name: plugins.security.disabled
+              value: "true"
+            - name: OPENSEARCH_JAVA_OPTS
+              value: {{ .Values.opensearch.javaOpts | quote }}
+            - name: DISABLE_INSTALL_DEMO_CONFIG
+              value: "true"
+          volumeMounts:
+            - name: opensearch-data
+              mountPath: /usr/share/opensearch/data
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 9200
+            initialDelaySeconds: 20
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 20
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 9200
+            initialDelaySeconds: 40
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.opensearch.resources | nindent 12 }}
+  volumeClaimTemplates:
+    - metadata:
+        name: opensearch-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: {{ .Values.opensearch.storage }}

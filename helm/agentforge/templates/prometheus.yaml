@@ -1,0 +1,79 @@
+{{/*
+prometheus.yml's content lives in files/observability/prometheus.yml
+(copied from ../../observability/prometheus.yml at chart-authoring time --
+see README.md's "keeping files/ in sync" section), rendered through `tpl`
+rather than a plain .Files.Get -- the scrape target inside that file itself
+uses {{ include "agentforge.fullname" . }} to reach the release-scoped
+execution-platform Service name (e.g. "test-release-execution-platform",
+not the bare "execution-platform" docker-compose/kubernetes/*.yaml use),
+so it has to be evaluated as a template, not embedded as static text.
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "agentforge.fullname" . }}-prometheus-config
+  labels:
+    {{- include "agentforge.labels" . | nindent 4 }}
+data:
+  prometheus.yml: |
+    {{- tpl (.Files.Get "files/observability/prometheus.yml") . | nindent 4 }}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "agentforge.fullname" . }}-prometheus
+  labels:
+    {{- include "agentforge.labels" . | nindent 4 }}
+    {{- include "agentforge.selectorLabels" (dict "component" "prometheus" "Release" .Release) | nindent 4 }}
+spec:
+  selector:
+    {{- include "agentforge.selectorLabels" (dict "component" "prometheus" "Release" .Release) | nindent 4 }}
+  ports:
+    - name: http
+      port: 9090
+      targetPort: 9090
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "agentforge.fullname" . }}-prometheus
+  labels:
+    {{- include "agentforge.labels" . | nindent 4 }}
+    {{- include "agentforge.selectorLabels" (dict "component" "prometheus" "Release" .Release) | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "agentforge.selectorLabels" (dict "component" "prometheus" "Release" .Release) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "agentforge.selectorLabels" (dict "component" "prometheus" "Release" .Release) | nindent 8 }}
+      annotations:
+        # Forces a rollout when the scrape config changes, since a plain
+        # ConfigMap volume mount doesn't trigger one on its own.
+        checksum/config: {{ .Files.Get "files/observability/prometheus.yml" | sha256sum }}
+    spec:
+      containers:
+        - name: prometheus
+          image: "{{ .Values.image.prometheus.repository }}:{{ .Values.image.prometheus.tag }}"
+          ports:
+            - containerPort: 9090
+          volumeMounts:
+            - name: prometheus-config
+              mountPath: /etc/prometheus/prometheus.yml
+              subPath: prometheus.yml
+          readinessProbe:
+            httpGet:
+              path: /-/ready
+              port: 9090
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.prometheus.resources | nindent 12 }}
+      volumes:
+        - name: prometheus-config
+          configMap:
+            name: {{ include "agentforge.fullname" . }}-prometheus-config

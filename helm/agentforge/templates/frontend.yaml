@@ -1,0 +1,81 @@
+{{/*
+values.frontend.publicUrls are read by the USER'S BROWSER, not
+server-to-server -- see kubernetes/frontend.yaml's comment for the full
+reasoning. The localhost defaults only work behind `kubectl port-forward`;
+set real hostnames (matching ingress.hosts below) for anything else.
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "agentforge.fullname" . }}-frontend-public-urls
+  labels:
+    {{- include "agentforge.labels" . | nindent 4 }}
+data:
+  NEXT_PUBLIC_CONTROL_PLANE_URL: {{ .Values.frontend.publicUrls.controlPlane | quote }}
+  NEXT_PUBLIC_EXECUTION_PLANE_URL: {{ .Values.frontend.publicUrls.executionPlatform | quote }}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "agentforge.fullname" . }}-frontend
+  labels:
+    {{- include "agentforge.labels" . | nindent 4 }}
+    {{- include "agentforge.selectorLabels" (dict "component" "frontend" "Release" .Release) | nindent 4 }}
+spec:
+  selector:
+    {{- include "agentforge.selectorLabels" (dict "component" "frontend" "Release" .Release) | nindent 4 }}
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "agentforge.fullname" . }}-frontend
+  labels:
+    {{- include "agentforge.labels" . | nindent 4 }}
+    {{- include "agentforge.selectorLabels" (dict "component" "frontend" "Release" .Release) | nindent 4 }}
+spec:
+  replicas: {{ .Values.frontend.replicas }}
+  selector:
+    matchLabels:
+      {{- include "agentforge.selectorLabels" (dict "component" "frontend" "Release" .Release) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "agentforge.selectorLabels" (dict "component" "frontend" "Release" .Release) | nindent 8 }}
+    spec:
+      containers:
+        - name: frontend
+          image: "{{ .Values.image.frontend.repository }}:{{ .Values.image.frontend.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: 3000
+          envFrom:
+            - configMapRef:
+                name: {{ include "agentforge.fullname" . }}-frontend-public-urls
+          env:
+            - name: NEXT_PUBLIC_DEV_BEARER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "agentforge.secretName" . }}
+                  key: dev-bearer-token
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 15
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.frontend.resources | nindent 12 }}

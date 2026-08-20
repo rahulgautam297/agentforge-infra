@@ -2,5 +2,7 @@
 
 **Phase:** 11
 
-Helm charts packaging the Kubernetes manifests for parameterized,
-repeatable deployments.
+Helm chart packaging the same topology `../kubernetes/*.yaml` and
+`../docker-compose.yml` both describe -- see
+[`agentforge/README.md`](./agentforge/README.md) for install steps, values,
+and known gaps.

@@ -1,0 +1,22 @@
+AgentForge deployed as release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
+
+Watch it come up:
+  kubectl -n {{ .Release.Namespace }} get pods -w
+
+control-plane runs `alembic upgrade head` on every start (unchanged from its
+own Dockerfile CMD) -- give it a minute on first boot before it's Ready.
+
+{{- if .Values.ingress.enabled }}
+
+Reachable via ingress at:
+  http://{{ .Values.ingress.hosts.frontend }}
+{{- else }}
+
+No ingress enabled -- reach it locally with:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "agentforge.fullname" . }}-frontend 3000:3000
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "agentforge.fullname" . }}-control-plane 8000:8000
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "agentforge.fullname" . }}-execution-platform 8001:8001
+
+Set ingress.enabled=true (and ingress.hosts.*, frontend.publicUrls.*) for
+anything past a port-forwarded smoke test -- see values.yaml's comments.
+{{- end }}

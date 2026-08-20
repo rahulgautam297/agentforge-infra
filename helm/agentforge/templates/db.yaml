@@ -1,0 +1,75 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "agentforge.fullname" . }}-db
+  labels:
+    {{- include "agentforge.labels" . | nindent 4 }}
+    {{- include "agentforge.selectorLabels" (dict "component" "db" "Release" .Release) | nindent 4 }}
+spec:
+  clusterIP: None
+  selector:
+    {{- include "agentforge.selectorLabels" (dict "component" "db" "Release" .Release) | nindent 4 }}
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "agentforge.fullname" . }}-db
+  labels:
+    {{- include "agentforge.labels" . | nindent 4 }}
+    {{- include "agentforge.selectorLabels" (dict "component" "db" "Release" .Release) | nindent 4 }}
+spec:
+  serviceName: {{ include "agentforge.fullname" . }}-db
+  replicas: {{ .Values.db.replicas }}
+  selector:
+    matchLabels:
+      {{- include "agentforge.selectorLabels" (dict "component" "db" "Release" .Release) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "agentforge.selectorLabels" (dict "component" "db" "Release" .Release) | nindent 8 }}
+    spec:
+      containers:
+        - name: db
+          image: "{{ .Values.image.db.repository }}:{{ .Values.image.db.tag }}"
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: agentforge
+            - name: POSTGRES_USER
+              value: agentforge
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "agentforge.secretName" . }}
+                  key: postgres-password
+          volumeMounts:
+            - name: db-data
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "agentforge", "-d", "agentforge"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 10
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "agentforge", "-d", "agentforge"]
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.db.resources | nindent 12 }}
+  volumeClaimTemplates:
+    - metadata:
+        name: db-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: {{ .Values.db.storage }}

@@ -1,0 +1,62 @@
+{{/*
+Dev-server, unchanged from kubernetes/temporal.yaml -- see that file's own
+comment on why this isn't a real Temporal cluster.
+*/}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "agentforge.fullname" . }}-temporal
+  labels:
+    {{- include "agentforge.labels" . | nindent 4 }}
+    {{- include "agentforge.selectorLabels" (dict "component" "temporal" "Release" .Release) | nindent 4 }}
+spec:
+  selector:
+    {{- include "agentforge.selectorLabels" (dict "component" "temporal" "Release" .Release) | nindent 4 }}
+  ports:
+    - name: grpc
+      port: 7233
+      targetPort: 7233
+    - name: ui
+      port: 8233
+      targetPort: 8233
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "agentforge.fullname" . }}-temporal
+  labels:
+    {{- include "agentforge.labels" . | nindent 4 }}
+    {{- include "agentforge.selectorLabels" (dict "component" "temporal" "Release" .Release) | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "agentforge.selectorLabels" (dict "component" "temporal" "Release" .Release) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "agentforge.selectorLabels" (dict "component" "temporal" "Release" .Release) | nindent 8 }}
+    spec:
+      containers:
+        - name: temporal
+          image: "{{ .Values.image.temporal.repository }}:{{ .Values.image.temporal.tag }}"
+          command: ["temporal"]
+          args: ["server", "start-dev", "--ip", "0.0.0.0"]
+          ports:
+            - containerPort: 7233
+            - containerPort: 8233
+          readinessProbe:
+            exec:
+              command: ["temporal", "operator", "cluster", "health", "--address", "localhost:7233"]
+            initialDelaySeconds: 15
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 20
+          livenessProbe:
+            exec:
+              command: ["temporal", "operator", "cluster", "health", "--address", "localhost:7233"]
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.temporal.resources | nindent 12 }}

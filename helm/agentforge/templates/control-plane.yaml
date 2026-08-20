@@ -1,0 +1,73 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "agentforge.fullname" . }}-control-plane
+  labels:
+    {{- include "agentforge.labels" . | nindent 4 }}
+    {{- include "agentforge.selectorLabels" (dict "component" "control-plane" "Release" .Release) | nindent 4 }}
+spec:
+  selector:
+    {{- include "agentforge.selectorLabels" (dict "component" "control-plane" "Release" .Release) | nindent 4 }}
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "agentforge.fullname" . }}-control-plane
+  labels:
+    {{- include "agentforge.labels" . | nindent 4 }}
+    {{- include "agentforge.selectorLabels" (dict "component" "control-plane" "Release" .Release) | nindent 4 }}
+spec:
+  replicas: {{ .Values.controlPlane.replicas }}
+  selector:
+    matchLabels:
+      {{- include "agentforge.selectorLabels" (dict "component" "control-plane" "Release" .Release) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "agentforge.selectorLabels" (dict "component" "control-plane" "Release" .Release) | nindent 8 }}
+    spec:
+      containers:
+        - name: control-plane
+          image: "{{ .Values.image.controlPlane.repository }}:{{ .Values.image.controlPlane.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: 8000
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "agentforge.secretName" . }}
+                  key: control-plane-database-url
+            - name: EXECUTION_ROLE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "agentforge.secretName" . }}
+                  key: execution-role-password
+            - name: DEV_BEARER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "agentforge.secretName" . }}
+                  key: dev-bearer-token
+            - name: CORS_ORIGINS
+              value: {{ .Values.controlPlane.corsOrigins | quote }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 15
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.controlPlane.resources | nindent 12 }}
