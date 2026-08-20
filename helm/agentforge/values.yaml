@@ -100,6 +100,16 @@ executionPlatform:
     requests: { cpu: 250m, memory: 512Mi }
     limits: { cpu: "1", memory: 1Gi }
 
+# execution-platform's ServiceAccount -- a dedicated one (not "default"),
+# since on a real EKS cluster this is what ../../terraform/iam.tf's
+# aws_eks_pod_identity_association binds Bedrock credentials to. Empty
+# name defaults to "<release-name>-execution-platform" (see _helpers.tpl);
+# override to match a pre-existing Pod Identity association's
+# service_account value if you didn't use terraform/'s own default.
+serviceAccount:
+  name: ""
+  annotations: {}
+
 # publicUrls are read by the BROWSER, not server-to-server -- see
 # templates/frontend.yaml's comment (same caveat as
 # kubernetes/frontend.yaml's frontend-public-urls ConfigMap). Must be real,

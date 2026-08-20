@@ -1,3 +1,23 @@
+{{/*
+Dedicated ServiceAccount rather than "default" -- see values.yaml's
+serviceAccount comment and ../../terraform/iam.tf, which binds a Bedrock-
+scoped IAM role to exactly this name via EKS Pod Identity on a real
+cluster. Harmless if you never apply that Terraform (e.g. local kind/
+minikube) -- the pod just runs under an unprivileged ServiceAccount with
+no AWS permissions, same as "default" would.
+*/}}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "agentforge.executionPlatformServiceAccountName" . }}
+  labels:
+    {{- include "agentforge.labels" . | nindent 4 }}
+  {{- with .Values.serviceAccount.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+
+---
 apiVersion: v1
 kind: Service
 metadata:
@@ -31,6 +51,7 @@ spec:
       labels:
         {{- include "agentforge.selectorLabels" (dict "component" "execution-platform" "Release" .Release) | nindent 8 }}
     spec:
+      serviceAccountName: {{ include "agentforge.executionPlatformServiceAccountName" . }}
       {{/* See kubernetes/execution-platform.yaml's comment -- Temporal is deliberately not waited on here; main.py's own _connect_temporal_client already retries. */}}
       initContainers:
         - name: wait-for-control-plane

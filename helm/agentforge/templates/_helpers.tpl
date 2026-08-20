@@ -36,3 +36,18 @@ existingSecret, or the one templates/secret.yaml creates from
 {{- printf "%s-credentials" (include "agentforge.fullname" .) -}}
 {{- end -}}
 {{- end -}}
+
+{{/*
+Name of execution-platform's ServiceAccount -- either the user-supplied
+serviceAccount.name, or "<release-name>-execution-platform" by default.
+This is the name ../../terraform/iam.tf's aws_eks_pod_identity_association
+must match (see that file's execution_platform_service_account variable)
+for Bedrock credentials to actually reach the pod on a real EKS cluster.
+*/}}
+{{- define "agentforge.executionPlatformServiceAccountName" -}}
+{{- if .Values.serviceAccount.name -}}
+{{- .Values.serviceAccount.name -}}
+{{- else -}}
+{{- printf "%s-execution-platform" (include "agentforge.fullname" .) -}}
+{{- end -}}
+{{- end -}}
