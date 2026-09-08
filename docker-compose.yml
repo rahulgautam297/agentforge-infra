@@ -141,8 +141,15 @@ services:
     image: grafana/grafana:11.4.0
     ports: ["3001:3000"]
     environment:
-      - GF_AUTH_ANONYMOUS_ENABLED=true
-      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      # Defaults preserve today's local-dev convenience (anonymous Admin,
+      # no login needed). A public deployment overrides these -- see the
+      # EC2 deploy's .env/docker-compose.override.yml -- since anonymous
+      # Admin access lets anyone reach it add data sources (a known SSRF
+      # vector) or delete/edit dashboards, not just view them.
+      - GF_AUTH_ANONYMOUS_ENABLED=${GRAFANA_ANONYMOUS_ENABLED:-true}
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=${GRAFANA_ANONYMOUS_ORG_ROLE:-Admin}
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
     volumes:
       - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
