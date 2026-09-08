@@ -104,6 +104,18 @@ services:
   frontend:
     build:
       context: ../agentforge-frontend
+      # Local dev always builds the `dev` stage (hot reload, `pnpm dev`,
+      # NEXT_PUBLIC_* read at container start via `environment:` below).
+      # A deployment wanting the production stage instead overrides this
+      # to `runner` (see the EC2 deploy's docker-compose.override.yml) --
+      # that target needs the same NEXT_PUBLIC_* values as build ARGs
+      # too, since `next build` inlines them at build time rather than
+      # reading them at server start the way `next dev` does.
+      target: dev
+      args:
+        NEXT_PUBLIC_CONTROL_PLANE_URL: ${NEXT_PUBLIC_CONTROL_PLANE_URL:-http://localhost:8000/api/v1}
+        NEXT_PUBLIC_EXECUTION_PLANE_URL: ${NEXT_PUBLIC_EXECUTION_PLANE_URL:-http://localhost:8001/api/v1}
+        NEXT_PUBLIC_DEV_BEARER_TOKEN: ${DEV_BEARER_TOKEN:-dev-local-token}
     environment:
       NEXT_PUBLIC_CONTROL_PLANE_URL: ${NEXT_PUBLIC_CONTROL_PLANE_URL:-http://localhost:8000/api/v1}
       NEXT_PUBLIC_EXECUTION_PLANE_URL: ${NEXT_PUBLIC_EXECUTION_PLANE_URL:-http://localhost:8001/api/v1}
