@@ -51,6 +51,14 @@ services:
       AWS_REGION: ${AWS_REGION:-us-east-1}
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      # Same "empty default, only needed if an agent YAML actually
+      # declares this provider" pattern as the AWS_* vars above -- these
+      # existed as config.py Settings fields (OPENAI_API_KEY since Phase
+      # 10) but were never actually passed through docker-compose until
+      # now, a pre-existing gap this fix closes for all three at once.
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
     ports: ["8001:8001"]
     depends_on:
       control-plane: { condition: service_healthy }
