@@ -123,6 +123,13 @@ services:
       - plugins.security.disabled=true
       - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
       - DISABLE_INSTALL_DEMO_CONFIG=true
+    # Found live while verifying Phase 12a's RAG-graded eval path (2026-09-09):
+    # this service had no volume at all, so indexed documents vanished on
+    # any container recreation while control-plane's `documents` table
+    # (real Postgres volume) kept claiming they were still indexed --
+    # metadata silently drifted from the actual OpenSearch content. Named
+    # volume added, same pattern as `db`'s agentforge-db-data above.
+    volumes: ["agentforge-opensearch-data:/usr/share/opensearch/data"]
     ports: ["9200:9200"]
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:9200 || exit 1"]
@@ -188,3 +195,4 @@ services:
 
 volumes:
   agentforge-db-data:
+  agentforge-opensearch-data:
