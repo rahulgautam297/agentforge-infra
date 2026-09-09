@@ -65,26 +65,56 @@ services:
       opensearch: { condition: service_healthy }
       temporal: { condition: service_healthy }
 
-  # Phase 6: Temporal dev-server -- wraps `durable`/`human_in_loop` graph
-  # invocations (see agentforge-docs doc05/ADR-0004). Self-contained,
-  # embedded-SQLite `temporal server start-dev`, not the older Cassandra/
-  # Postgres/Elasticsearch `auto-setup` image -- no separate datastore
-  # container needed. Deliberately does NOT share the `agentforge` Postgres
-  # database: doc05 is explicit that Temporal's event history lives in its
-  # own storage, separate from `agentforge`. Web UI on 8233; SDK/gRPC on
-  # 7233 (used by both the execution-platform's in-process Worker and its
-  # router's Client -- see temporal_worker.py / main.py).
+  # Phase 6: Temporal -- wraps `durable`/`human_in_loop` graph invocations
+  # (see agentforge-docs doc05/ADR-0004). SDK/gRPC on 7233, used by both
+  # the execution-platform's in-process Worker and its router's Client --
+  # see temporal_worker.py / main.py.
+  #
+  # Real persistence (temporalio/auto-setup against the same Postgres
+  # instance as `db`, in its own `temporal`/`temporal_visibility`
+  # databases -- distinct databases, zero shared tables with `agentforge`,
+  # same "separate storage" split doc05 already documents). Not
+  # `start-dev`: that mode is in-memory with no volume at all, so a
+  # container restart silently loses every workflow's history, including
+  # any human_in_loop execution genuinely mid-pause on an approval --
+  # see doc14's outstanding-gaps entry on this. auto-setup provisions the
+  # schema itself on first boot (needs CREATEDB on the given Postgres
+  # role, which `agentforge` already has as the DB's init user).
+  # temporalio/auto-setup is Temporal's own documented "not for true
+  # production scale" image (it re-checks schema on every boot) --
+  # accepted here as the right-sized tradeoff for this project, same
+  # choice the official temporalio/docker-compose examples make; a real
+  # production deployment would provision schema once via
+  # temporal-sql-tool and run the plain temporalio/server image instead.
   temporal:
-    image: temporalio/temporal:latest
-    entrypoint: ["temporal"]
-    command: ["server", "start-dev", "--ip", "0.0.0.0"]
-    ports: ["7233:7233", "8233:8233"]
+    image: temporalio/auto-setup:1.28.0
+    environment:
+      - DB=postgres12
+      - DB_PORT=5432
+      - POSTGRES_USER=agentforge
+      - POSTGRES_PWD=${POSTGRES_PASSWORD:-agentforge_dev_password}
+      - POSTGRES_SEEDS=db
+    ports: ["7233:7233"]
+    depends_on:
+      db: { condition: service_healthy }
     healthcheck:
       test: ["CMD-SHELL", "temporal operator cluster health --address temporal:7233 || exit 1"]
       interval: 5s
       timeout: 5s
-      retries: 20
-      start_period: 15s
+      retries: 30
+      start_period: 20s
+
+  # start-dev bundled a lightweight UI on 8233 for free; the real server
+  # image doesn't, so this is now a separate container pointed at the
+  # same frontend.
+  temporal-ui:
+    image: temporalio/ui:2.31.2
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+      - TEMPORAL_CORS_ORIGINS=http://localhost:3000
+    ports: ["8233:8080"]
+    depends_on:
+      temporal: { condition: service_healthy }
 
   opensearch:
     image: opensearchproject/opensearch:2.19.1
